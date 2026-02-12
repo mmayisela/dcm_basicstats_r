@@ -1,0 +1,520 @@
+Title: Exploring Genetic and Demographic Predictors of Left Ventricular Ejection Fraction
+
+Data from patients at Pineapple hospital who had their LVEF and genotype recorded
+
+```{r}
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+install.packages("dplyr")
+library(dplyr)
+install.packages("ggplot2")
+library(ggplot2)
+install.packages("tableone")
+library(tableone)
+install.packages("gtsummary")
+library(gtsummary)
+install.packages("gt")
+library(gt)
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("knitr")
+library(knitr)
+install.packages("xtable")
+library(xtable)
+
+patient_data <- read.csv("/Users/minenhle/Library/CloudStorage/GoogleDrive-mmayisela2000@gmail.com/My Drive/resources/mini_projects/dcm_rproject/data.csv")
+
+```
+
+
+Cleaning the data steps
+
+Change gender,genotype to a categorical variables
+```{r}
+patient_data$Gender <-factor(patient_data$Gender)
+patient_data$SNP_TTN <-factor(patient_data$SNP_TTN)
+```
+
+Check for missing data
+```{r}
+colSums(is.na(patient_data))
+rowSums(is.na(patient_data))
+
+```
+
+Check for duplicates
+```{r}
+duplicated(patient_data[,c("ID")])
+patient_data<-patient_data[!duplicated(patient_data),]
+
+```
+
+Basic summaries
+```{r}
+str(patient_data)
+summary(patient_data)
+```
+
+Create baseline characteristics table
+
+```{r}
+library(tableone)
+library(dplyr)
+library(gt)
+
+vars <- c("SNP_TTN", "Gender", "LVEF", "Age")
+factorVars <- c("SNP_TTN", "Gender")
+
+table1 <- CreateTableOne(
+  vars = vars,
+  data = patient_data,
+  factorVars = factorVars,
+  includeNA = TRUE
+)
+
+# Extract summary statistics properly
+table_df <- as.data.frame(print(table1, quote = FALSE, noSpaces = TRUE))
+
+# Move rownames into a column
+table_df$Variable <- rownames(table_df)
+
+# Keep only the summary column and clean names
+table_df <- table_df %>%
+  select(Variable, Overall = `1`) %>%
+  filter(!Variable %in% c("n", "Missing"))  # removes weird rows
+
+# Make it look like a journal table
+gt_table <- table_df %>%
+  gt() %>%
+  cols_label(
+    Variable = "Baseline Characteristic",
+    Overall = "Overall (N = total)"
+  ) %>%
+  tab_header(
+    title = md("**Table 1. Baseline Characteristics**")
+  ) %>%
+  tab_options(
+    table.font.size = "small",
+    heading.align = "left"
+  )
+
+gt_table
+
+
+```
+
+Descriptive and distributional insights
+
+Distribution of age
+
+```{r}
+
+gender_counts <- patient_data %>%
+  count(Gender)
+
+gender <- ggplot(gender_counts, aes(x = "", y = n, fill = Gender)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  labs(title = "Gender Distribution")
+
+gender
+```
+
+
+1. Distribution of age by gender
+
+```{r}
+agebygender<-ggplot(patient_data, aes(x = Age, fill = Gender)) +
+  geom_histogram(binwidth =10, position = "stack", color = "white", alpha = 0.8) +
+  labs(title = "Age Distribution by Gender",
+       x = "Age (years)",
+       y = "Count") +
+  theme_minimal()
+agebygender
+```
+
+2. Distribution of lvef by age 
+```{r}
+lvefbyagegender<-ggplot(patient_data, aes(x = Age, y = LVEF)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  facet_wrap(~Gender) +
+  labs(title = "LVEF vs Age by Gender")
+
+lvefbyagegender
+```
+
+3. LVEF by Genotype
+
+```{r}
+lvefgenotype<-ggplot(patient_data, aes(x = SNP_TTN, y = LVEF, fill = SNP_TTN)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(title = "LVEF Distribution by Genotype",
+       x = "Genotype",
+       y = "LVEF (%)") +
+  theme_minimal()
+
+lvefgenotype
+```
+
+
+4. See if there is mean difference in LVEF between male and female
+
+The question is, are there any significant differences between mean LVEF between the genders
+```{r}
+t.test(LVEF ~ Gender, data = patient_data)
+
+```
+
+p-value = 0.007339
+
+There is mean difference in LVEF between male and female, we reject null hypothesis
+
+5. How Genotype varies by age and gender
+
+For age - we use ANOVA because age is continuous variable
+```{r}
+shapiro.test(patient_data$Age)
+aov_age <- aov(Age ~ SNP_TTN, data = patient_data)
+summary(aov_age)
+
+```
+summary(aov_age)
+            Df Sum Sq Mean Sq F value Pr(>F)    
+SNP_TTN      2  14684    7342   247.4 <2e-16 ***
+Residuals   97   2878      30                   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+For gender - we use chi square test because both are categorical variables
+```{r}
+chisq.test(table(patient_data$SNP_TTN, patient_data$Gender))
+
+```
+
+
+6. Is there correlation between age and LVEF
+
+```{R}
+cor.test(patient_data$Age, patient_data$LVEF, method = "pearson")
+plot(patient_data$Age, patient_data$LVEF,
+     xlab = "Age (years)",
+     ylab = "LVEF (%)",
+     main = "Age vs LVEF")
+abline(lm(LVEF ~ Age, data = patient_data), col = "blue")
+
+```
+
+Pearson's product-moment correlation
+
+data:  patient_data$Age and patient_data$LVEF
+t = -20.591, df = 98, p-value < 2.2e-16
+alternative hypothesis: true correlation is not equal to 0
+95 percent confidence interval:
+ -0.9325840 -0.8564469
+sample estimates:
+       cor 
+-0.9012545 
+
+LVEF and Age are negatively correlated in DCM patients
+
+
+7. Are specific genotypes associated with reduced or preserved LVEF
+
+
+```{R}
+#Define LVEF cutoffs
+
+patient_data$LVEF_group <- cut(
+  patient_data$LVEF,
+  breaks = c(-Inf, 40, 49, Inf),
+  labels = c("Reduced", "Mildly_reduced", "Preserved"),
+  right = TRUE
+)
+
+table(patient_data$LVEF_group)
+
+patient_data$LVEF_binary <- ifelse(patient_data$LVEF >= 50, 1,
+                           ifelse(patient_data$LVEF <= 40, 0, NA))
+
+table(patient_data$LVEF_binary, useNA = "ifany")
+
+#Logistic 
+model1 <- glm(LVEF_binary ~ SNP_TTN,
+              data = patient_data,
+              family = binomial)
+
+summary(model1)
+
+
+```
+
+Call:
+glm(formula = LVEF_binary ~ SNP_TTN, family = binomial, data = patient_data)
+
+Coefficients:
+             Estimate Std. Error z value Pr(>|z|)
+(Intercept)    -26.57  134602.22       0        1
+SNP_TTNTC       53.13  164853.27       0        1
+SNP_TTNTT       53.13  144481.17       0        1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 4.4865e+01  on 66  degrees of freedom
+Residual deviance: 3.8871e-10  on 64  degrees of freedom
+  (33 observations deleted due to missingness)
+AIC: 6
+
+Number of Fisher Scoring iterations: 25
+
+This is a separation error so we will use Fisher;'s test instead. Fisher is appropriate with low counts
+
+```{r}
+tab <- table(patient_data$SNP_TTN, patient_data$LVEF_binary)
+tab
+
+fisher.test(tab)
+
+```
+fisher.test(tab)
+
+        Fisher's Exact Test for Count Data
+
+data:  tab
+p-value = 1.15e-09
+alternative hypothesis: two.sided
+
+
+```{r}
+install.packages("logistf")
+library(logistf)
+
+model_penal <- logistf(LVEF_binary ~ SNP_TTN, data = patient_data)
+summary(model_penal)
+
+```
+
+
+Does gender modift relationship between GT and LVEF
+
+```{R}
+model_int <- glm(LVEF_binary ~ SNP_TTN * Gender,
+                 data = patient_data,
+                 family = binomial)
+
+summary(model_int)
+
+```
+So the interaction model you ran cannot be interpreted — not because the question is wrong, but because the data are too sparse for that model.
+
+```{r}
+library(logistf)
+
+model_int_penal2 <- logistf(LVEF_binary ~ SNP_TTN * Gender,
+                           data = patient_data)
+
+summary(model_int_penal)
+
+```
+
+Can age, gender, GT predict LVEF using linear regression
+
+```{r}
+model_lm1 <- lm(LVEF ~ Age + Gender + SNP_TTN,
+               data = patient_data)
+
+summary(model_lm1)
+
+```
+
+Call:
+lm(formula = LVEF ~ Age + Gender + SNP_TTN, data = patient_data)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-3.6483 -1.1005  0.0003  1.1411  4.5241 
+
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept) 47.08606    2.38276  19.761  < 2e-16 ***
+Age         -0.06752    0.03528  -1.914   0.0587 .  
+GenderMale  -4.19553    0.37936 -11.059  < 2e-16 ***
+SNP_TTNTC    6.77140    0.84369   8.026 2.65e-12 ***
+SNP_TTNTT   15.65629    1.27229  12.306  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 1.714 on 95 degrees of freedom
+Multiple R-squared:  0.9478,    Adjusted R-squared:  0.9456 
+F-statistic: 431.1 on 4 and 95 DF,  p-value: < 2.2e-16
+
+
+
+In multivariable linear regression analysis, genotype and gender were significant independent predictors of LVEF. Compared with the reference genotype, TC carriers had a 6.8% higher LVEF (p < 0.001), while TT carriers had a 15.7% higher LVEF (p < 0.001). Male sex was associated with a 4.2% lower LVEF (p < 0.001). Age showed a borderline inverse association (p = 0.059). The model explained 94.6% of the variance in LVEF.
+
+
+
+Can GT and gneder be used to classify pateints into HF subtypes based on LVEF tresholds
+
+```{r}
+patient_data$HF_subtype <- cut(
+  patient_data$LVEF,
+  breaks = c(-Inf, 40, 49, Inf),
+  labels = c("HFrEF", "HFmrEF", "HFpEF")
+)
+
+table(patient_data$HF_subtype)
+
+
+table(patient_data$SNP_TTN, patient_data$HF_subtype)
+chisq.test(table(patient_data$SNP_TTN, patient_data$HF_subtype))
+
+table(patient_data$Gender, patient_data$HF_subtype)
+chisq.test(table(patient_data$Gender, patient_data$HF_subtype))
+
+
+library(nnet)
+
+model_multi <- multinom(HF_subtype ~ SNP_TTN + Gender,
+                        data = patient_data)
+
+summary(model_multi)
+
+
+z <- summary(model_multi)$coefficients / summary(model_multi)$standard.errors
+p_values <- 2 * (1 - pnorm(abs(z)))
+p_values
+
+```
+
+
+> patient_data$HF_subtype <- cut(
++   patient_data$LVEF,
++   breaks = c(-Inf, 40, 49, Inf),
++   labels = c("HFrEF", "HFmrEF", "HFpEF")
++ )
+
+table(patient_data$HF_subtype)
+
+
+table(patient_data$SNP_TTN, patient_data$HF_subtype)
+chisq.test(table(patient_data$SNP_TTN, patient_data$HF_subtype))
+
+table(patient_data$Gender, patient_data$HF_subtype)
+chisq.test(table(patient_data$Gender, patient_data$HF_subtype))
+
+
+library(nnet)
+
+model_multi <- multinom(HF_subtype ~ SNP_TTN + Gender,
+                        data = patient_data)
+
+summary(model_multi)
+
+> 
+> table(patient_data$HF_subtype)
+
+ HFrEF HFmrEF  HFpEF 
+     7     31     62 
+
+
+table(patient_data$SNP_TTN, patient_data$HF_subtype)
+chisq.test(table(patient_data$SNP_TTN, patient_data$HF_subtype))
+
+table(patient_data$Gender, patient_data$HF_subtype)
+chisq.test(table(patient_data$Gender, patient_data$HF_subtype))
+
+
+library(nnet)
+
+model_multi <- multinom(HF_subtype ~ SNP_TTN + Gender,
+                        data = patient_data)
+
+summary(model_multi)
+
+
+z <- summary(model_multi)$coefficients / summary(model_multi)$standard.errors
+p_values <- 2 * (1 - pnorm(abs(z)))
+p_values
+> 
+> 
+> table(patient_data$SNP_TTN, patient_data$HF_subtype)
+    
+     HFrEF HFmrEF HFpEF
+  CC     7     11     0
+  TC     0     20    16
+  TT     0      0    46
+> chisq.test(table(patient_data$SNP_TTN, patient_data$HF_subtype))
+
+        Pearson's Chi-squared test
+
+data:  table(patient_data$SNP_TTN, patient_data$HF_subtype)
+X-squared = 82.079, df = 4, p-value < 2.2e-16
+
+Warning message:
+In chisq.test(table(patient_data$SNP_TTN, patient_data$HF_subtype)) :
+  Chi-squared approximation may be incorrect
+> 
+> table(patient_data$Gender, patient_data$HF_subtype)
+        
+         HFrEF HFmrEF HFpEF
+  Female     1     10    38
+  Male       6     21    24
+> chisq.test(table(patient_data$Gender, patient_data$HF_subtype))
+
+        Pearson's Chi-squared test
+
+data:  table(patient_data$Gender, patient_data$HF_subtype)
+X-squared = 10.6, df = 2, p-value = 0.004991
+
+Warning message:
+In chisq.test(table(patient_data$Gender, patient_data$HF_subtype)) :
+  Chi-squared approximation may be incorrect
+> 
+> 
+> library(nnet)
+> 
+> model_multi <- multinom(HF_subtype ~ SNP_TTN + Gender,
++                         data = patient_data)
+# weights:  15 (8 variable)
+initial  value 109.861229 
+iter  10 value 12.865354
+iter  20 value 11.579606
+iter  30 value 11.571627
+iter  40 value 11.559502
+iter  50 value 11.556527
+iter  60 value 11.556224
+iter  70 value 11.554725
+iter  80 value 11.553983
+iter  90 value 11.553942
+iter 100 value 11.553511
+final  value 11.553511 
+stopped after 100 iterations
+> 
+> summary(model_multi)
+Call:
+multinom(formula = HF_subtype ~ SNP_TTN + Gender, data = patient_data)
+
+Coefficients:
+       (Intercept) SNP_TTNTC SNP_TTNTT GenderMale
+HFmrEF    2.198715  14.04780 -1.670322  -3.297217
+HFpEF    -7.679574  26.69862 40.014738 -17.200792
+
+Std. Errors:
+       (Intercept) SNP_TTNTC SNP_TTNTT GenderMale
+HFmrEF    1.054745  148.6332 1624.5630   1.333836
+HFpEF    46.558591  155.7552  401.9447  59.962082
+
+Residual Deviance: 23.10702 
+AIC: 39.10702 
+> 
+> 
+> z <- summary(model_multi)$coefficients / summary(model_multi)$standard.errors
+> p_values <- 2 * (1 - pnorm(abs(z)))
+> p_values
+       (Intercept) SNP_TTNTC SNP_TTNTT GenderMale
+HFmrEF  0.03710628 0.9247015 0.9991796 0.01343666
+HFpEF   0.86898783 0.8638983 0.9206993 0.77421863
